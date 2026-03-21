@@ -8,9 +8,24 @@ const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 const app = express();
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL_2,
+  'http://localhost:5173',
+  'http://localhost:3000',
+].filter(Boolean);
+
 // Middleware
 app.use(helmet());
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000'], credentials: true }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
