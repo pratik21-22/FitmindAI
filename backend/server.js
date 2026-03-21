@@ -17,6 +17,20 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
 
+// Root endpoint
+app.get('/', (req, res) => res.json({ 
+  message: 'Welcome to FitMind AI API 🏋️‍♂️🤖',
+  version: '1.0.0',
+  endpoints: {
+    auth: '/api/auth',
+    workouts: '/api/workouts',
+    diet: '/api/diet',
+    progress: '/api/progress',
+    ai: '/api/ai',
+    health: '/api/health'
+  }
+}));
+
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/workouts', require('./routes/workoutRoutes'));
