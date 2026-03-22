@@ -8,21 +8,36 @@ const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 const app = express();
 
+const normalizeOrigin = (value) => (value || '').trim().replace(/\/$/, '');
+const allowVercelPreviews = String(process.env.ALLOW_VERCEL_PREVIEWS || '').toLowerCase() === 'true';
+const isVercelPreviewOrigin = (origin) => {
+  try {
+    const hostname = new URL(origin).hostname;
+    return /\.vercel\.app$/i.test(hostname);
+  } catch {
+    return false;
+  }
+};
 const allowedOrigins = [
   process.env.FRONTEND_URL,
-  process.env.FRONTEND_URL_2,
-  'http://localhost:5173',
-  'http://localhost:3000',
-].filter(Boolean);
+  
+  'https://fitmind-ai-two.vercel.app'
+  
+]
+  .map(normalizeOrigin)
+  .filter(Boolean);
 
 // Middleware
 app.use(helmet());
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    const normalizedOrigin = normalizeOrigin(origin);
+    const isAllowedPreview = allowVercelPreviews && isVercelPreviewOrigin(normalizedOrigin);
+
+    if (!origin || allowedOrigins.includes(normalizedOrigin) || isAllowedPreview) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
+    return callback(new Error(`CORS blocked for origin: ${normalizedOrigin || origin}`));
   },
   credentials: true,
 }));
