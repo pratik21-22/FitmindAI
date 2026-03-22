@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Bell, X, CheckCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bell, X, CheckCheck, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const pageTitles = {
@@ -37,16 +37,54 @@ const buildNotifications = (user) => {
   return notes;
 };
 
+const quickNavItems = [
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/workouts', label: 'Workouts' },
+  { to: '/diet', label: 'Diet Tracker' },
+  { to: '/ai-chat', label: 'AI Assistant' },
+  { to: '/plans', label: 'Plan Generator' },
+  { to: '/progress', label: 'Progress Tracker' },
+  { to: '/profile', label: 'Profile' },
+];
+
 const Topbar = () => {
   const { user } = useAuth();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const title = pageTitles[pathname] || 'FitMind AI';
   const [panelOpen, setPanelOpen] = useState(false);
   const [dismissed, setDismissed] = useState(new Set());
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
   const notifications = buildNotifications(user).filter(n => !dismissed.has(n.id));
   const hasUnread = notifications.length > 0;
   const dismissAll = () => setDismissed(new Set(buildNotifications(user).map(n => n.id)));
+  const filteredQuickNav = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return quickNavItems;
+    return quickNavItems.filter((item) => item.label.toLowerCase().includes(normalized));
+  }, [query]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen((prev) => !prev);
+      }
+      if (event.key === 'Escape') {
+        setCommandOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const handleCommandNavigate = (to) => {
+    setCommandOpen(false);
+    setQuery('');
+    navigate(to);
+  };
 
   return (
     <header
@@ -65,6 +103,21 @@ const Topbar = () => {
       </div>
 
       <div className="flex items-center gap-3">
+        <button
+          onClick={() => setCommandOpen(true)}
+          className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl text-xs border transition-colors"
+          style={{
+            color: 'var(--text-secondary)',
+            borderColor: 'var(--border-subtle)',
+            background: 'rgba(255,255,255,0.02)',
+          }}
+          aria-label="Open quick search"
+        >
+          <Search size={14} />
+          Quick search
+          <span className="px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(255,255,255,0.06)' }}>Ctrl K</span>
+        </button>
+
         {/* Bell */}
         <div className="relative">
           <button
@@ -145,6 +198,57 @@ const Topbar = () => {
           {user?.name?.[0]?.toUpperCase() || 'U'}
         </div>
       </div>
+
+      <AnimatePresence>
+        {commandOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="command-overlay"
+            onClick={() => setCommandOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
+              transition={{ duration: 0.15 }}
+              className="command-card"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="command-head">
+                <Search size={16} />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search pages..."
+                  className="command-input"
+                />
+                <button className="btn-icon w-7 h-7" onClick={() => setCommandOpen(false)}>
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="command-results">
+                {filteredQuickNav.map((item) => (
+                  <button
+                    key={item.to}
+                    className="command-item"
+                    onClick={() => handleCommandNavigate(item.to)}
+                  >
+                    <span>{item.label}</span>
+                    <span className="command-path">{item.to}</span>
+                  </button>
+                ))}
+                {filteredQuickNav.length === 0 && (
+                  <div className="command-empty">No matching pages</div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 };

@@ -18,11 +18,13 @@ const isVercelPreviewOrigin = (origin) => {
     return false;
   }
 };
+const localDevOrigins = process.env.NODE_ENV === 'production'
+  ? []
+  : ['http://localhost:5173', 'http://localhost:3000'];
 const allowedOrigins = [
   process.env.FRONTEND_URL,
-  
-  'https://fitmind-ai-two.vercel.app'
-  
+  process.env.FRONTEND_URL_2,
+  ...localDevOrigins,
 ]
   .map(normalizeOrigin)
   .filter(Boolean);

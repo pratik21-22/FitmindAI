@@ -8,6 +8,7 @@ const baseURL = normalizedBase
 
 const api = axios.create({
   baseURL,
+  timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -21,10 +22,24 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
+  async (error) => {
+    const config = error.config || {};
+    const status = error.response?.status;
+    const requestUrl = String(error.config?.url || '');
+    const isAuthRequest = /\/auth\/(login|signup)(\?.*)?$/i.test(requestUrl);
+    const isRetryable = !status || status >= 500;
+
+    if (isRetryable && !config.__retried) {
+      config.__retried = true;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return api(config);
+    }
+
+    if (status === 401 && !isAuthRequest) {
       localStorage.removeItem('fitmind_user');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
     }
     return Promise.reject(error);
   }
