@@ -41,6 +41,9 @@ const AIAssistant = () => {
       const { data } = await api.post('/ai/chat', { message: msg, chatId });
       setChatId(data.chatId);
       setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
+      if (data?.meta?.fallback) {
+        toast.error('Live AI provider unavailable, using fallback response.');
+      }
       loadChats();
     } catch { toast.error('AI is unavailable. Try again.'); setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I'm having trouble responding. Please check your connection." }]); }
     finally { setLoading(false); }

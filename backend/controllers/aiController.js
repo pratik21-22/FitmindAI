@@ -118,6 +118,17 @@ const requestChatCompletion = async ({ messages, maxTokens }) => {
   throw new Error(errors.length ? errors.join(' | ') : 'No AI provider configured');
 };
 
+const buildFallbackReply = (user, message, reason) => {
+  const goal = user?.goal || 'general fitness';
+  const headline = [
+    '## Coaching Backup Response',
+    '## Practical Fitness Guidance',
+    '## Personalized Quick Plan',
+  ][Math.floor(Math.random() * 3)];
+
+  return `${headline}\n\nI could not reach the live AI provider right now, so here is a tailored response for your request:\n\n> Your message: "${message}"\n\n### Your context\n- Goal: ${goal}\n- Activity level: ${user?.activityLevel || 'moderate'}\n- Focus for today: Consistency + progressive overload\n\n### Actionable next step\n1. Do one 30-45 min session aligned to your goal\n2. Hit protein target (roughly 1.6-2.0 g per kg bodyweight)\n3. Sleep 7-8 hours and hydrate well\n\n### Why this helps\nShort, repeatable habits improve adherence and results over time.\n\nProvider status: ${reason || 'fallback mode'}`;
+};
+
 // @desc  Chat with AI
 // @route POST /api/ai/chat
 const chat = async (req, res) => {
@@ -145,14 +156,16 @@ const chat = async (req, res) => {
     const messages = buildConversationMessages(user, chatSession);
 
     let aiContent = '';
+    let aiMeta = { provider: 'fallback', model: 'internal-fallback', fallback: true, reason: 'unknown' };
 
     try {
       const result = await requestChatCompletion({ messages, maxTokens: 800 });
       aiContent = result.content;
+      aiMeta = { provider: result.provider, model: result.model, fallback: false, reason: null };
     } catch (aiError) {
       console.error('❌ AI Error:', aiError.message);
-      // Fallback mock response if API fails
-      aiContent = generateMockResponse(message);
+      aiContent = buildFallbackReply(user, message, aiError.message);
+      aiMeta = { provider: 'fallback', model: 'internal-fallback', fallback: true, reason: aiError.message };
     }
 
     chatSession.messages.push({ role: 'assistant', content: aiContent });
@@ -165,6 +178,7 @@ const chat = async (req, res) => {
       chatId: chatSession._id,
       message: aiContent,
       history: chatSession.messages,
+      meta: aiMeta,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -189,6 +203,7 @@ ${planType !== 'workout' ? 'Include: Daily meal plan with breakfast, lunch, dinn
 Format: Use clear markdown with headers for each day. Be specific and practical.`;
 
     let planContent = '';
+    let planMeta = { provider: 'fallback', model: 'internal-fallback', fallback: true, reason: 'unknown' };
     try {
       const result = await requestChatCompletion({
         messages: [
@@ -198,12 +213,14 @@ Format: Use clear markdown with headers for each day. Be specific and practical.
         maxTokens: 1500,
       });
       planContent = result.content;
+      planMeta = { provider: result.provider, model: result.model, fallback: false, reason: null };
     } catch (aiError) {
       console.error('❌ AI Plan Error:', aiError.message);
       planContent = generateMockPlan(user, planType);
+      planMeta = { provider: 'fallback', model: 'internal-fallback', fallback: true, reason: aiError.message };
     }
 
-    res.json({ plan: planContent, generatedAt: new Date() });
+    res.json({ plan: planContent, generatedAt: new Date(), meta: planMeta });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
