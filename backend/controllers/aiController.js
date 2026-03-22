@@ -3,14 +3,35 @@ const User = require('../models/User');
 const OpenAI = require('openai');
 const { awardXP } = require('../utils/xpUtils');
 
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-  defaultHeaders: {
-    'HTTP-Referer': 'http://localhost:5173',
-    'X-Title': 'FitMind AI',
-  }
-});
+const normalize = (value) => String(value || '').trim();
+const AI_PROVIDER = normalize(process.env.AI_PROVIDER || 'auto').toLowerCase();
+const OPENROUTER_API_KEY = normalize(process.env.OPENROUTER_API_KEY);
+const HUGGINGFACE_API_KEY = normalize(process.env.HUGGINGFACE_API_KEY);
+const OPENROUTER_MODEL = normalize(process.env.AI_MODEL_OPENROUTER || 'meta-llama/llama-3.1-8b-instruct:free');
+const HUGGINGFACE_MODEL = normalize(process.env.AI_MODEL_HUGGINGFACE || 'Qwen/Qwen2.5-7B-Instruct');
+
+const createOpenRouterClient = () => {
+  if (!OPENROUTER_API_KEY) return null;
+  return new OpenAI({
+    apiKey: OPENROUTER_API_KEY,
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: {
+      'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
+      'X-Title': 'FitMind AI',
+    },
+  });
+};
+
+const createHuggingFaceClient = () => {
+  if (!HUGGINGFACE_API_KEY) return null;
+  return new OpenAI({
+    apiKey: HUGGINGFACE_API_KEY,
+    baseURL: 'https://router.huggingface.co/v1',
+  });
+};
+
+const openRouterClient = createOpenRouterClient();
+const huggingFaceClient = createHuggingFaceClient();
 
 const getSystemPrompt = (user) => `You are FitMind AI, an expert personal fitness coach and nutritionist. 
 You are helping ${user.name || 'a user'} who:
@@ -22,7 +43,80 @@ You are helping ${user.name || 'a user'} who:
 - Gender: ${user.gender || 'not specified'}
 
 Provide personalized, actionable fitness and nutrition advice. Be encouraging, specific, and science-based.
-Format responses with clear sections using markdown when helpful. Keep responses concise but comprehensive.`;
+Format responses with clear sections using markdown when helpful. Keep responses concise but comprehensive.
+Do not repeat the same opening line each answer. Vary phrasing and examples naturally.`;
+
+const generateVariationHint = () => {
+  const choices = [
+    'Use a practical and direct tone.',
+    'Keep this answer short and action-focused.',
+    'Use one motivating line and then concrete steps.',
+    'Use bullet points and specific numbers when possible.',
+  ];
+  return choices[Math.floor(Math.random() * choices.length)];
+};
+
+const buildConversationMessages = (user, chatSession) => {
+  const variationHint = generateVariationHint();
+  return [
+    { role: 'system', content: getSystemPrompt(user) },
+    { role: 'system', content: `Style hint: ${variationHint}` },
+    ...chatSession.messages.slice(-14).map((m) => ({ role: m.role, content: m.content })),
+  ];
+};
+
+const extractContent = (completion) => completion?.choices?.[0]?.message?.content || '';
+
+const requestChatCompletion = async ({ messages, maxTokens }) => {
+  const providers = [];
+
+  if (AI_PROVIDER === 'openrouter' || AI_PROVIDER === 'auto') {
+    if (openRouterClient) {
+      providers.push({
+        name: 'openrouter',
+        model: OPENROUTER_MODEL,
+        client: openRouterClient,
+      });
+    }
+  }
+
+  if (AI_PROVIDER === 'huggingface' || AI_PROVIDER === 'auto') {
+    if (huggingFaceClient) {
+      providers.push({
+        name: 'huggingface',
+        model: HUGGINGFACE_MODEL,
+        client: huggingFaceClient,
+      });
+    }
+  }
+
+  const errors = [];
+
+  for (const provider of providers) {
+    try {
+      const completion = await provider.client.chat.completions.create({
+        model: provider.model,
+        messages,
+        max_tokens: maxTokens,
+        temperature: 0.95,
+        top_p: 0.95,
+        presence_penalty: 0.35,
+        frequency_penalty: 0.25,
+      });
+
+      const content = extractContent(completion);
+      if (content) {
+        return { content, provider: provider.name, model: provider.model };
+      }
+
+      errors.push(`${provider.name}: empty content`);
+    } catch (error) {
+      errors.push(`${provider.name}: ${error.message}`);
+    }
+  }
+
+  throw new Error(errors.length ? errors.join(' | ') : 'No AI provider configured');
+};
 
 // @desc  Chat with AI
 // @route POST /api/ai/chat
@@ -48,26 +142,15 @@ const chat = async (req, res) => {
     // Add user message
     chatSession.messages.push({ role: 'user', content: message });
 
-    // Build messages for OpenAI
-    const messages = [
-      { role: 'system', content: getSystemPrompt(user) },
-      ...chatSession.messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
-    ];
+    const messages = buildConversationMessages(user, chatSession);
 
     let aiContent = '';
 
     try {
-      const completion = await openai.chat.completions.create({
-        model: 'meta-llama/llama-3.1-8b-instruct:free',
-        messages,
-        max_tokens: 800,
-        temperature: 0.7,
-      });
-      aiContent = completion.choices[0].message.content;
+      const result = await requestChatCompletion({ messages, maxTokens: 800 });
+      aiContent = result.content;
     } catch (aiError) {
-      console.error('❌ OpenAI Error:', aiError.message);
-      console.error('   Status:', aiError.status || 'N/A');
-      console.error('   Code:', aiError.code || 'N/A');
+      console.error('❌ AI Error:', aiError.message);
       // Fallback mock response if API fails
       aiContent = generateMockResponse(message);
     }
@@ -107,18 +190,16 @@ Format: Use clear markdown with headers for each day. Be specific and practical.
 
     let planContent = '';
     try {
-      const completion = await openai.chat.completions.create({
-        model: 'meta-llama/llama-3.1-8b-instruct:free',
+      const result = await requestChatCompletion({
         messages: [
           { role: 'system', content: getSystemPrompt(user) },
           { role: 'user', content: prompt },
         ],
-        max_tokens: 1500,
-        temperature: 0.6,
+        maxTokens: 1500,
       });
-      planContent = completion.choices[0].message.content;
+      planContent = result.content;
     } catch (aiError) {
-      console.error('❌ OpenAI Plan Error:', aiError.message);
+      console.error('❌ AI Plan Error:', aiError.message);
       planContent = generateMockPlan(user, planType);
     }
 
@@ -157,16 +238,18 @@ const getChat = async (req, res) => {
 // Fallback mock responses when no OpenAI key
 function generateMockResponse(message) {
   const lower = message.toLowerCase();
+  const motivators = ['You got this! 💪', 'Keep going, your consistency will pay off. 🔥', 'Small daily wins create big results. 🚀'];
+  const ending = motivators[Math.floor(Math.random() * motivators.length)];
   if (lower.includes('workout') || lower.includes('exercise')) {
-    return `## 💪 Workout Recommendation\n\nGreat question! Here's a solid workout plan for you:\n\n**Upper Body (Mon/Thu):**\n- Bench Press: 3×10\n- Pull-ups: 3×8\n- Shoulder Press: 3×10\n- Bicep Curls: 3×12\n\n**Lower Body (Tue/Fri):**\n- Squats: 4×10\n- Romanian Deadlifts: 3×10\n- Leg Press: 3×12\n- Calf Raises: 4×15\n\n💡 **Tip:** Rest 60–90 seconds between sets and prioritize progressive overload!`;
+    return `## 💪 Workout Recommendation\n\nHere is a simple structure you can start this week:\n\n**Upper Body (Mon/Thu):**\n- Bench Press: 3×10\n- Pull-ups: 3×8\n- Shoulder Press: 3×10\n- Bicep Curls: 3×12\n\n**Lower Body (Tue/Fri):**\n- Squats: 4×10\n- Romanian Deadlifts: 3×10\n- Leg Press: 3×12\n- Calf Raises: 4×15\n\n💡 **Tip:** Rest 60-90 seconds between sets and increase weight gradually.\n\n${ending}`;
   }
   if (lower.includes('diet') || lower.includes('nutrition') || lower.includes('food') || lower.includes('eat')) {
-    return `## 🥗 Nutrition Guide\n\nHere's a balanced daily nutrition plan:\n\n**Breakfast:** Oats + protein shake + banana (≈500 cal)\n**Lunch:** Chicken breast + brown rice + vegetables (≈600 cal)\n**Snack:** Greek yogurt + almonds (≈250 cal)\n**Dinner:** Salmon + sweet potato + salad (≈550 cal)\n\n**Daily Targets:**\n- 🔥 Calories: ~1,900–2,200\n- 💪 Protein: 150–180g\n- 🌾 Carbs: 200–250g\n- 🥑 Fats: 60–80g\n\n💡 Drink 2–3L of water daily!`;
+    return `## 🥗 Nutrition Guide\n\nTry this balanced day template:\n\n**Breakfast:** Oats + protein shake + banana (~500 cal)\n**Lunch:** Chicken breast + brown rice + vegetables (~600 cal)\n**Snack:** Greek yogurt + almonds (~250 cal)\n**Dinner:** Salmon + sweet potato + salad (~550 cal)\n\n**Daily Targets:**\n- Calories: ~1,900-2,200\n- Protein: 150-180g\n- Carbs: 200-250g\n- Fats: 60-80g\n\n${ending}`;
   }
   if (lower.includes('fat') || lower.includes('lose') || lower.includes('weight loss')) {
-    return `## 🔥 Fat Loss Strategy\n\nHere's your evidence-based fat loss plan:\n\n**Key Principles:**\n1. **Caloric Deficit:** Eat 300–500 fewer calories than you burn\n2. **High Protein:** 1.6–2g per kg bodyweight to preserve muscle\n3. **Strength Training:** 3–4x per week to maintain muscle\n4. **Cardio:** 150–200 min/week (mix HIIT + steady-state)\n\n**Quick Tips:**\n- ✅ Track meals with this app\n- ✅ Sleep 7–8 hours nightly\n- ✅ Minimize processed foods\n- ✅ Stay consistent for 8–12 weeks\n\nYou've got this! 💪`;
+    return `## 🔥 Fat Loss Strategy\n\nA strong fat-loss framework:\n\n**Key Principles:**\n1. Caloric deficit: 300-500 calories below maintenance\n2. High protein: 1.6-2g per kg bodyweight\n3. Strength training: 3-4 sessions per week\n4. Cardio: 150-200 minutes weekly\n\n**Quick Tips:**\n- Track meals daily\n- Sleep 7-8 hours\n- Keep processed food low\n- Review progress every 2 weeks\n\n${ending}`;
   }
-  return `## 🤖 FitMind AI Response\n\nThanks for your question! I'm your personal AI fitness coach.\n\nTo get the most personalized advice, make sure you've filled in your profile details (weight, height, age, goal).\n\n**I can help you with:**\n- 💪 Custom workout plans\n- 🥗 Personalized nutrition advice\n- 📊 Progress analysis\n- 🔥 Fat loss & muscle building strategies\n- 🧘 Recovery & injury prevention\n\nWhat specific fitness goal would you like help with today?`;
+  return `## 🤖 FitMind AI Response\n\nThanks for your question. I can give tailored coaching if you share your exact goal and constraints (time, gym/home, equipment, diet preference).\n\n**I can help with:**\n- Custom workout plans\n- Nutrition strategy\n- Progress plateaus\n- Recovery and injury-safe training\n\n${ending}`;
 }
 
 function generateMockPlan(user, planType) {

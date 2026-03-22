@@ -1,6 +1,6 @@
 # FitMind AI 🏋️‍♂️🤖
 
-A premium, full-stack AI-powered fitness and nutrition tracker built for the future. FitMind AI acts as your personal fitness coach, integrating OpenAI to generate personalized workout plans, diet suggestions, and answer fitness questions in real-time.
+A premium, full-stack AI-powered fitness and nutrition tracker built for the future. FitMind AI acts as your personal fitness coach, integrating OpenRouter free models to generate personalized workout plans, diet suggestions, and answer fitness questions in real-time.
 
 ![FitMind AI](https://via.placeholder.com/1200x600/020817/00ff88?text=FitMind+AI+Dashboard)
 
@@ -17,7 +17,7 @@ A premium, full-stack AI-powered fitness and nutrition tracker built for the fut
 - **Frontend:** React.js, Vite, Tailwind CSS v4, Framer Motion, Chart.js, React Router
 - **Backend:** Node.js, Express.js, Mongoose
 - **Database:** MongoDB
-- **AI Integration:** OpenAI API (`gpt-3.5-turbo`)
+- **AI Integration:** OpenRouter free models (Llama / similar OSS instruct models)
 - **Authentication:** JWT (JSON Web Tokens) + bcryptjs
 
 ---
@@ -27,7 +27,7 @@ A premium, full-stack AI-powered fitness and nutrition tracker built for the fut
 ### 1. Prerequisites
 - Node.js (v18+)
 - MongoDB (Local instance or MongoDB Atlas URI)
-- OpenAI API Key
+- OpenRouter API Key
 
 ### 2. Backend Setup
 ```bash
@@ -40,7 +40,8 @@ Create a `.env` file in the `backend/` directory:
 PORT=5000
 MONGO_URI=mongodb://localhost:27017/fitmind
 JWT_SECRET=your_super_secret_jwt_key
-OPENAI_API_KEY=sk-your-openai-api-key
+OPENROUTER_API_KEY=sk-or-v1-your-openrouter-api-key
+AI_PROVIDER=openrouter
 NODE_ENV=development
 ```
 
@@ -75,7 +76,7 @@ This repo is ready for a split deployment:
 Create these values before deploying:
 - `MONGO_URI` (MongoDB Atlas connection string)
 - `JWT_SECRET` (long random string)
-- `OPENAI_API_KEY`
+- `OPENROUTER_API_KEY`
 - `FRONTEND_URL` (your Vercel URL, e.g. `https://fitmind-ai.vercel.app`)
 
 ### 1. Deploy Backend (Render)
@@ -91,7 +92,7 @@ Create these values before deploying:
 	- `NODE_ENV=production`
 	- `MONGO_URI=<your atlas uri>`
 	- `JWT_SECRET=<your secret>`
-	- `OPENAI_API_KEY=<your key>`
+	- `OPENROUTER_API_KEY=<your key>`
 	- `FRONTEND_URL=<your vercel frontend url>`
 6. Deploy and confirm health endpoint:
 	- `https://<your-render-service>.onrender.com/api/health`
