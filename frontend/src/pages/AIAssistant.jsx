@@ -20,6 +20,11 @@ const AIAssistant = () => {
   const [chatId, setChatId] = useState(null);
   const [chats, setChats] = useState([]);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [aiStatus, setAiStatus] = useState({
+    label: 'Status unknown',
+    color: 'var(--warning)',
+    detail: 'Waiting for first response',
+  });
   const messagesEnd = useRef(null);
 
   useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -41,6 +46,19 @@ const AIAssistant = () => {
       const { data } = await api.post('/ai/chat', { message: msg, chatId });
       setChatId(data.chatId);
       setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
+      if (data?.meta?.fallback) {
+        setAiStatus({
+          label: 'Fallback mode',
+          color: 'var(--warning)',
+          detail: data?.meta?.reason || 'Live provider unavailable',
+        });
+      } else {
+        setAiStatus({
+          label: 'Live AI',
+          color: 'var(--success)',
+          detail: `${data?.meta?.provider || 'provider'} • ${data?.meta?.model || 'model'}`,
+        });
+      }
       if (data?.meta?.fallback) {
         toast.error('Live AI provider unavailable, using fallback response.');
       }
@@ -109,6 +127,18 @@ const AIAssistant = () => {
               <div className="w-1.5 h-1.5 rounded-full pulse-glow" style={{ background: 'var(--success)' }} />
               <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>Online · Ready to help</span>
             </div>
+          </div>
+          <div
+            className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full border"
+            title={aiStatus.detail}
+            style={{
+              borderColor: 'var(--border-subtle)',
+              background: 'rgba(255,255,255,0.02)',
+              marginLeft: '0.25rem',
+            }}
+          >
+            <div className="w-2 h-2 rounded-full" style={{ background: aiStatus.color }} />
+            <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{aiStatus.label}</span>
           </div>
           <button onClick={newChat} className="ml-auto btn-secondary text-xs px-3 py-1.5 flex items-center gap-1">
             <Plus size={12} /> New Chat

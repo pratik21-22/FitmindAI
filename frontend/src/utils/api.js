@@ -37,8 +37,8 @@ api.interceptors.response.use(
 
     if (status === 401 && !isAuthRequest) {
       localStorage.removeItem('fitmind_user');
-      if (window.location.pathname !== '/login') {
-        window.location.assign('/login');
+      if (window.location.pathname !== '/') {
+        window.location.assign('/');
       }
     }
     return Promise.reject(error);
